@@ -1,0 +1,30 @@
+version: '3.8'
+# Start with version: '3.8'
+services:
+# Define a services: section with two services: backend and frontend
+  backend:
+  # Use build: ./backend to build from the backend Dockerfile
+    build: ./backend
+      # Create a volume for database persistence
+    volumes:
+      - recipe_data:/backend:/app
+      # Map port 5000 to port 5000 ("5000:5000")
+    ports:
+      - "5000:5000"
+
+  frontend:
+  # Use build: ./frontend to build from the frontend Dockerfile
+    build: ./frontend
+    # Map port 3000 to port 80 ("3000:80")
+    ports:
+      - "3000:80"
+    # Add depends_on: - backend to ensure backend starts first
+    depends_on:
+      - backend
+    # Set VITE_API_URL=http://localhost:5000 as an environment variable. This sets the environment variable for the backend API.
+    environment: 
+      - VITE_API_URL=http://localhost:5000
+
+# Backend declared volume
+volumes:
+  recipe_data:
