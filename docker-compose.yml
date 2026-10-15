@@ -5,12 +5,12 @@ services:
   backend:
   # Use build: ./backend to build from the backend Dockerfile
     build: ./backend
-      # Create a volume for database persistence
-    volumes:
-      - recipe_data:/backend:/app
       # Map port 5000 to port 5000 ("5000:5000")
     ports:
       - "5000:5000"
+      # Create a volume for database persistence
+    volumes:
+      - recipe_data:/app/data
 
   frontend:
   # Use build: ./frontend to build from the frontend Dockerfile
