@@ -1,0 +1,104 @@
+name: Recipe Sharing CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Checkout
+    - name: Checkout Recipe Sharing code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install backend dependencies
+      run: |
+        cd backend
+        npm install
+
+    - name: Install frontend dependencies
+      run: |
+        cd frontend
+        npm install
+
+    # Test Backend
+    - name: Test Recipe API (backend)
+      run: |
+        cd backend
+        npm test
+
+    # Test Frontend
+    - name: Test Recipe frontend
+      run: |
+        cd frontend
+        npm test
+
+    # Everything below only runs if the tests above passed
+    - name: Authenticate to Google Cloud
+      if: success() && github.event_name == 'push'
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+    - name: Set up gcloud
+      if: success() && github.event_name == 'push'
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker for gcr.io
+      if: success() && github.event_name == 'push'
+      run: gcloud auth configure-docker gcr.io --quiet
+
+    # Build Images
+    - name: Build and push backend image
+      if: success() && github.event_name == 'push'
+      run: |
+        cd backend
+        docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/recipe-backend:${{ github.sha }} .
+        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/recipe-backend:${{ github.sha }}
+
+    - name: Build and push frontend image
+      if: success() && github.event_name == 'push'
+      run: |
+        cd frontend
+        BACKEND_URL=$(gcloud run services describe recipe-backend --region=${{ secrets.GCP_REGION }} --format='value(status.url)')
+        docker build --build-arg VITE_API_URL=$BACKEND_URL -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/recipe-frontend:${{ github.sha }} .
+        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/recipe-frontend:${{ github.sha }}
+
+    # Deploy
+    - name: Deploy backend to Cloud Run
+      if: success() && github.event_name == 'push'
+      run: |
+        gcloud run deploy recipe-backend \
+          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/recipe-backend:${{ github.sha }} \
+          --region ${{ secrets.GCP_REGION }} \
+          --platform managed \
+          --allow-unauthenticated \
+          --port 5000 \
+          --memory 512Mi
+
+    - name: Deploy frontend to Cloud Run
+      if: success() && github.event_name == 'push'
+      run: |
+        gcloud run deploy recipe-frontend \
+          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/recipe-frontend:${{ github.sha }} \
+          --region ${{ secrets.GCP_REGION }} \
+          --platform managed \
+          --allow-unauthenticated \
+          --port 80 \
+          --memory 512Mi
+
+    - name: Get Recipe Sharing URLs
+      if: success() && github.event_name == 'push'
+      run: |
+        echo "Backend:  $(gcloud run services describe recipe-backend --region=${{ secrets.GCP_REGION }} --format='value(status.url)')"
+        echo "Frontend: $(gcloud run services describe recipe-frontend --region=${{ secrets.GCP_REGION }} --format='value(status.url)')"
